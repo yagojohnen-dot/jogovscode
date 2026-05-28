@@ -1,1 +1,598 @@
-# jogovscode
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binding of Python: Ultra Edition</title>
+    <style>
+        body {
+            background-color: #0b0808;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            color: #8b0000;
+            text-shadow: 3px 3px #000;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        #hud {
+            display: none;
+            width: 900px;
+            background: #000;
+            padding: 12px 20px;
+            font-size: 20px;
+            font-weight: bold;
+            border-bottom: 4px solid #3d312a;
+            justify-content: space-between;
+            box-sizing: border-box;
+        }
+
+        .hud-item {
+            display: inline-block;
+            margin-right: 20px;
+        }
+
+        #hud-hp {
+            color: #ff3333;
+        }
+
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px #000;
+            text-align: center;
+            width: 320px;
+        }
+
+        input {
+            width: 85%;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            border: 2px solid #555;
+            background: #1c1c1c;
+            color: #fff;
+        }
+
+        button {
+            width: 93%;
+            padding: 12px;
+            background: #8b0000;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            margin: 6px 0;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #b30000;
+        }
+
+        canvas {
+            display: none;
+            border: 4px solid #1a110e;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Barra de vida do Chefão */
+        #boss-hp-container {
+            display: none;
+            width: 900px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #fff;
+            margin-top: 10px;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        #boss-hp-bar {
+            width: 100%;
+            height: 100%;
+            background: #8b0000;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1 id="main-title">BINDING OF PYTHON</h1>
+
+    <div id="auth-screen" class="container">
+        <h2>Login</h2>
+        <input type="text" id="username" placeholder="Usuário"><br>
+        <input type="password" id="password" placeholder="Senha"><br>
+        <button onclick="login()">Entrar</button>
+        <button onclick="registrar()">Registrar</button>
+        <button onclick="toggleRanking()">Ver Ranking</button>
+        <div id="ranking-box" class="hidden">
+            <table style="width:100%; margin-top:10px; border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th>Pos</th>
+                        <th>Jogador</th>
+                        <th>Pts</th>
+                        <th>Fase</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="hud">
+        <div>
+            <span class="hud-item" id="hud-player">Jogador: -</span>
+            <span class="hud-item">Pattern: 1</span>
+        </div>
+        <div>
+            <span class="hud-item" id="hud-fase" style="color: #bbb;">Fase: 1 / 10</span>
+        </div>
+        <div>
+            <span class="hud-item" id="hud-hp">Vida: ♥ ♥ ♥</span>
+            <span class="hud-item" id="hud-score">Pontos: 0</span>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+    <div id="boss-hp-container">
+        <div id="boss-hp-bar"></div>
+        <div
+            style="position:absolute; top:0; width:100%; text-align:center; font-size:12px; font-weight:bold; color:#fff; line-height:16px;">
+            MEGA SATAN</div>
+    </div>
+
+    <script>
+        // --- BANCO DE DADOS LOCAL ---
+        if (!localStorage.getItem('dados_jogo')) localStorage.setItem('dados_jogo', JSON.stringify({ usuarios: {}, ranking: [] }));
+        let dados = JSON.parse(localStorage.getItem('dados_jogo'));
+        let usuarioAtual = null;
+
+        function salvarDados() { localStorage.setItem('dados_jogo', JSON.stringify(dados)); }
+
+        function login() {
+            const user = document.getElementById('username').value.trim();
+            const pass = document.getElementById('password').value;
+            if (dados.usuarios[user] && dados.usuarios[user] === pass) {
+                usuarioAtual = user;
+                iniciarJogo();
+            } else { alert("Usuário ou senha incorretos!"); }
+        }
+
+        function registrar() {
+            const user = document.getElementById('username').value.trim();
+            const pass = document.getElementById('password').value;
+            if (!user || !pass) return alert("Preencha os campos!");
+            if (dados.usuarios[user]) return alert("Usuário já existe!");
+            dados.usuarios[user] = pass; salvarDados(); alert("Registrado com sucesso!");
+        }
+
+        function toggleRanking() {
+            const box = document.getElementById('ranking-box'); box.classList.toggle('hidden');
+            const tbody = document.getElementById('ranking-body'); tbody.innerHTML = "";
+            let lista = (dados.ranking || []).sort((a, b) => b.pontos - a.pontos).slice(0, 5);
+            lista.forEach((p, i) => { tbody.innerHTML += `<tr><td>${i + 1}</td><td>${p.usuario}</td><td>${p.pontos}</td><td>${p.fase}</td></tr>`; });
+        }
+
+        // --- ENGINE DO JOGO ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let jogador, inimigos, projeteis, bossProj, fase, pontos, jogoAtivo, passagemAberta, boss;
+        let teclas = {};
+        let textoAlertaTimer = 0;
+
+        // Novas variáveis para controle dos Itens
+        let itemNaSala = null;
+        let multiplicadorDano = 1;
+        let velocidadeTiro = 8;
+        let textoItemTimer = 0;
+        let textoItemNome = "";
+
+        window.addEventListener('keydown', e => teclas[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => teclas[e.key.toLowerCase()] = false);
+
+        canvas.addEventListener('mousedown', function (e) {
+            if (!jogoAtivo) return;
+            let rect = canvas.getBoundingClientRect();
+            let mouseX = e.clientX - rect.left;
+            let mouseY = e.clientY - rect.top;
+            let dx = mouseX - jogador.x;
+            let dy = mouseY - jogador.y;
+            let dist = Math.hypot(dx, dy);
+            if (dist > 0) {
+                // Aplica as melhorias de tamanho/raio (r) e velocidade (velocidadeTiro) adquiridas por itens
+                let raioProjetil = 6 * multiplicadorDano;
+                projeteis.push({
+                    x: jogador.x,
+                    y: jogador.y - 10,
+                    dx: (dx / dist) * velocidadeTiro,
+                    dy: (dy / dist) * velocidadeTiro,
+                    r: raioProjetil
+                });
+            }
+        });
+
+        function iniciarJogo() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-title').style.display = 'none';
+            document.getElementById('hud').style.display = 'flex';
+            canvas.style.display = 'block';
+
+            document.getElementById('hud-player').innerText = `Jogador: ${usuarioAtual}`;
+            fase = 1; pontos = 0; jogoAtivo = true;
+
+            // Reset de Atributos do Isaac
+            multiplicadorDano = 1;
+            velocidadeTiro = 8;
+            jogador = { x: 120, y: 250, hp: 3, w: 30, h: 40, speed: 5 };
+
+            projeteis = [];
+            bossProj = [];
+            gerarFase();
+            gameLoop();
+        }
+
+        function gerarFase() {
+            passagemAberta = false;
+            inimigos = [];
+            boss = null;
+            itemNaSala = null; // Limpa o item da fase anterior
+            document.getElementById('boss-hp-container').style.display = 'none';
+            textoAlertaTimer = 90;
+
+            if (fase === 10) {
+                boss = { x: 450, y: 250, hp: 100, maxHp: 100, timerTiro: 0, r: 55 };
+                document.getElementById('boss-hp-container').style.display = 'block';
+                document.getElementById('boss-hp-bar').style.width = "100%";
+            } else {
+                let qtdInimigos = 2 + (fase * 2);
+                for (let i = 0; i < qtdInimigos; i++) {
+                    let ex, ey;
+                    ex = Math.random() * (canvas.width / 2 - 140) + (canvas.width / 2 + 40);
+                    ey = Math.random() * (canvas.height - 200) + 100;
+
+                    inimigos.push({ x: ex, y: ey, hp: 2, r: 14, speed: 1.0 + (fase * 0.15) });
+                }
+            }
+        }
+
+        function gerenciarSpawnItem() {
+            // Gera um item aleatório se estiver entre as fases 2 e 9
+            if (fase >= 2 && fase <= 9 && !itemNaSala) {
+                let listaItens = [
+                    { tipo: 'vida', cor: '#ff3333', nome: 'Pílula de HP (+1 Coração)' },
+                    { tipo: 'velocidade', cor: '#2ecc71', nome: 'Suco de Velocidade (Passos Rápidos)' },
+                    { tipo: 'dano', cor: '#e67e22', nome: 'Lágrima de Fogo (Tiros Maiores)' },
+                    { tipo: 'tiro_vel', cor: '#3498db', nome: 'Lágrima Veloz (Ataque Veloz)' }
+                ];
+                // Escolhe um aleatório
+                let itemEscolhido = listaItens[Math.floor(Math.random() * listaItens.length)];
+                itemNaSala = {
+                    x: 450, // Centro do mapa
+                    y: 250,
+                    r: 12,
+                    ...itemEscolhido
+                };
+            }
+        }
+
+        function atualizar() {
+            if (teclas['w'] && jogador.y > 85) jogador.y -= jogador.speed;
+            if (teclas['s'] && jogador.y < canvas.height - 85) jogador.y += jogador.speed;
+            if (teclas['a'] && jogador.x > 85) jogador.x -= jogador.speed;
+            if (teclas['d']) {
+                if (passagemAberta && jogador.x >= canvas.width - 85 && Math.abs(jogador.y - 250) < 50) {
+                    fase++;
+                    pontos += 150;
+                    jogador.x = 100;
+                    jogador.y = 250;
+                    gerarFase();
+                } else if (jogador.x < canvas.width - 85) {
+                    jogador.x += jogador.speed;
+                }
+            }
+
+            if (textoAlertaTimer > 0) textoAlertaTimer--;
+            if (textoItemTimer > 0) textoItemTimer--;
+
+            // Colisão com o Item na Sala
+            if (itemNaSala) {
+                if (Math.hypot(jogador.x - itemNaSala.x, jogador.y - itemNaSala.y) < itemNaSala.r + 15) {
+                    // Aplica o efeito do item coletado
+                    if (itemNaSala.tipo === 'vida' && jogador.hp < 3) jogador.hp++;
+                    if (itemNaSala.tipo === 'velocidade') jogador.speed += 0.8;
+                    if (itemNaSala.tipo === 'dano') multiplicadorDano += 0.35;
+                    if (itemNaSala.tipo === 'tiro_vel') velocidadeTiro += 2.5;
+
+                    // Ativa texto de feedback na tela
+                    textoItemNome = itemNaSala.nome;
+                    textoItemTimer = 90;
+
+                    itemNaSala = null; // Remove o item após coletar
+                }
+            }
+
+            // Atualizar Projéteis do Jogador
+            for (let i = projeteis.length - 1; i >= 0; i--) {
+                let p = projeteis[i]; p.x += p.dx; p.y += p.dy;
+                if (p.x < 60 || p.x > canvas.width - 60 || p.y < 60 || p.y > canvas.height - 60) {
+                    projeteis.splice(i, 1); continue;
+                }
+
+                if (boss) {
+                    if (Math.hypot(p.x - boss.x, p.y - boss.y) < boss.r) {
+                        // Causa dano escalonado com base no multiplicador de tamanho do tiro
+                        boss.hp -= (1 * (multiplicadorDano >= 1.35 ? 1.5 : 1));
+                        projeteis.splice(i, 1);
+                        document.getElementById('boss-hp-bar').style.width = (boss.hp / boss.maxHp * 100) + "%";
+                        if (boss.hp <= 0) {
+                            finalizarJogo(true);
+                            return;
+                        }
+                        continue;
+                    }
+                }
+
+                for (let j = inimigos.length - 1; j >= 0; j--) {
+                    let e = inimigos[j];
+                    if (Math.hypot(p.x - e.x, p.y - e.y) < e.r + p.r) {
+                        e.hp--; projeteis.splice(i, 1);
+                        if (e.hp <= 0) { inimigos.splice(j, 1); pontos += 10; }
+                        break;
+                    }
+                }
+            }
+
+            // Lógica de Ataques Variados Aleatórios do Boss
+            if (boss) {
+                boss.timerTiro++;
+                if (boss.timerTiro > 40) {
+                    let tipoAtaque = Math.floor(Math.random() * 3) + 1;
+
+                    if (tipoAtaque === 1) {
+                        let direcoes = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+                        direcoes.forEach(baseAngle => {
+                            for (let i = -1; i <= 1; i++) {
+                                let anguloFinal = baseAngle + (i * 0.2);
+                                bossProj.push({ x: boss.x, y: boss.y, dx: Math.cos(anguloFinal) * 4.5, dy: Math.sin(anguloFinal) * 4.5, r: 10 });
+                            }
+                        });
+                    }
+                    else if (tipoAtaque === 2) {
+                        for (let i = 0; i < 10; i++) {
+                            let randomX = Math.random() * (canvas.width - 160) + 80;
+                            bossProj.push({ x: randomX, y: 65, dx: 0, dy: Math.random() * 2 + 3, r: 9 });
+                        }
+                    }
+                    else if (tipoAtaque === 3) {
+                        let totalProjeteis = 12;
+                        for (let i = 0; i < totalProjeteis; i++) {
+                            let angulo = (Math.PI * 2 / totalProjeteis) * i;
+                            bossProj.push({ x: boss.x, y: boss.y, dx: Math.cos(angulo) * 3.5, dy: Math.sin(angulo) * 3.5, r: 10 });
+                        }
+                    }
+                    boss.timerTiro = 0;
+                }
+            }
+
+            // Atualizar Projéteis do Boss
+            for (let i = bossProj.length - 1; i >= 0; i--) {
+                let bp = bossProj[i]; bp.x += bp.dx; bp.y += bp.dy;
+
+                if (bp.x < 60 || bp.x > canvas.width - 60 || bp.y < 60 || bp.y > canvas.height - 60) {
+                    bossProj.splice(i, 1); continue;
+                }
+
+                if (Math.hypot(bp.x - jogador.x, bp.y - jogador.y) < bp.r + 12) {
+                    jogador.hp--;
+                    bossProj.splice(i, 1);
+                    jogador.x = 100; jogador.y = 250;
+                    if (jogador.hp <= 0) finalizarJogo(false);
+                }
+            }
+
+            // Atualizar Inimigos Comuns
+            inimigos.forEach(e => {
+                let angle = Math.atan2(jogador.y - e.y, jogador.x - e.x);
+                e.x += Math.cos(angle) * e.speed; e.y += Math.sin(angle) * e.speed;
+                if (Math.hypot(jogador.x - e.x, jogador.y - e.y) < e.r + 15) {
+                    jogador.hp--;
+                    jogador.x = 120; jogador.y = 250;
+                    if (jogador.hp <= 0) finalizarJogo(false);
+                }
+            });
+
+            if (inimigos.length === 0 && !boss) {
+                passagemAberta = true;
+                gerenciarSpawnItem(); // Tenta gerar um item no centro se a sala for limpa
+            }
+        }
+
+        function desenhar() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Chão
+            ctx.fillStyle = "#543d31";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Sombra
+            let gradient = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 100, canvas.width / 2, canvas.height / 2, 500);
+            gradient.addColorStop(0, 'transparent');
+            gradient.addColorStop(1, 'rgba(0,0,0,0.7)');
+            ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Paredes
+            ctx.fillStyle = "#33221a";
+            ctx.fillRect(0, 0, canvas.width, 60);
+            ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+            ctx.fillRect(0, 0, 60, canvas.height);
+            ctx.fillRect(canvas.width - 60, 0, 60, canvas.height);
+
+            // Tijolos
+            ctx.strokeStyle = "#1f1410"; ctx.lineWidth = 3;
+            for (let x = 60; x < canvas.width - 60; x += 80) {
+                ctx.strokeRect(x, 0, 80, 60);
+                ctx.strokeRect(x, canvas.height - 60, 80, 60);
+            }
+
+            // 3. Portas
+            ctx.fillStyle = "#1a0f0a";
+            ctx.fillRect(40, 210, 20, 80);
+
+            if (passagemAberta) {
+                ctx.fillStyle = "#000000"; ctx.fillRect(canvas.width - 60, 210, 20, 80);
+                ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 5; ctx.strokeRect(canvas.width - 60, 210, 20, 80);
+
+                let luz = ctx.createLinearGradient(canvas.width - 60, 250, canvas.width - 160, 250);
+                luz.addColorStop(0, 'rgba(255, 215, 0, 0.4)'); luz.addColorStop(1, 'transparent');
+                ctx.fillStyle = luz; ctx.beginPath(); ctx.moveTo(canvas.width - 60, 210); ctx.lineTo(canvas.width - 160, 180); ctx.lineTo(canvas.width - 160, 320); ctx.lineTo(canvas.width - 60, 290); ctx.fill();
+            } else {
+                ctx.fillStyle = "#1a0f0a"; ctx.fillRect(canvas.width - 60, 210, 20, 80);
+            }
+
+            // Desenhar Item na Sala (se houver)
+            if (itemNaSala) {
+                ctx.save();
+                ctx.translate(itemNaSala.x, itemNaSala.y);
+
+                // Pedestal do Item
+                ctx.fillStyle = "#7f8c8d";
+                ctx.fillRect(-15, 10, 30, 12);
+                ctx.fillStyle = "#95a5a6";
+                ctx.fillRect(-10, -2, 20, 12);
+
+                // Brilho místico em volta do item
+                let brilho = ctx.createRadialGradient(0, -12, 2, 0, -12, itemNaSala.r * 1.8);
+                brilho.addColorStop(0, itemNaSala.cor);
+                brilho.addColorStop(1, 'transparent');
+                ctx.fillStyle = brilho;
+                ctx.beginPath(); ctx.arc(0, -12, itemNaSala.r * 1.8, 0, Math.PI * 2); ctx.fill();
+
+                // O Item propriamente dito
+                ctx.fillStyle = itemNaSala.cor;
+                ctx.beginPath(); ctx.arc(0, -12, itemNaSala.r, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+                ctx.restore();
+            }
+
+            // 4. Isaac (A cor das lágrimas muda com base nos itens de Dano ou Velocidade do tiro)
+            ctx.save();
+            ctx.translate(jogador.x, jogador.y);
+            ctx.fillStyle = "#fbc5a0"; ctx.beginPath(); ctx.arc(0, 5, 10, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, -12, 16, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(-6, -14, 3, 0, Math.PI * 2); ctx.arc(6, -14, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -5, 4, 0, Math.PI, true); ctx.stroke();
+
+            // Cor do rastro das Lágrimas nos olhos dele de acordo com os upgrades adquiridos
+            if (multiplicadorDano > 1) ctx.fillStyle = "#e67e22";
+            else if (velocidadeTiro > 8) ctx.fillStyle = "#3498db";
+            else ctx.fillStyle = "#4aa3df";
+            ctx.fillRect(-8, -10, 3, 14); ctx.fillRect(5, -10, 3, 14);
+            ctx.restore();
+
+            // 5. Boss
+            if (boss) {
+                ctx.save(); ctx.translate(boss.x, boss.y);
+                ctx.fillStyle = "#261c19";
+                ctx.beginPath(); ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-90, -70, -20, -20); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(40, 0); ctx.quadraticCurveTo(90, -70, 20, -20); ctx.fill();
+                ctx.fillStyle = "#443129"; ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = "#1f1410"; ctx.lineWidth = 4; ctx.stroke();
+                ctx.fillStyle = "#261c19";
+                ctx.beginPath(); ctx.moveTo(-30, -45); ctx.lineTo(-55, -75); ctx.lineTo(-10, -50); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(30, -45); ctx.lineTo(55, -75); ctx.lineTo(10, -50); ctx.fill();
+                ctx.fillStyle = "#e74c3c"; ctx.beginPath(); ctx.arc(-18, -10, 10, 0, Math.PI * 2); ctx.arc(18, -10, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
+
+            // 6. Inimigos Comuns
+            inimigos.forEach(e => {
+                ctx.save(); ctx.translate(e.x, e.y);
+                ctx.fillStyle = "#9c261b"; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = "#5c110a"; ctx.lineWidth = 2; ctx.stroke();
+                ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(-6, -5); ctx.lineTo(-2, -2); ctx.moveTo(6, -5); ctx.lineTo(2, -2); ctx.stroke();
+                ctx.fillStyle = "#fff"; ctx.fillRect(-4, 3, 8, 3);
+                ctx.restore();
+            });
+
+            // 7. Projéteis Jogador (Ficam estilizados de acordo com os itens consumidos)
+            if (multiplicadorDano > 1) ctx.fillStyle = "#ff7f11";
+            else if (velocidadeTiro > 8) ctx.fillStyle = "#00bfff";
+            else ctx.fillStyle = "#70c5ff";
+
+            projeteis.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); });
+
+            // 8. Projéteis Boss
+            ctx.fillStyle = "#ff3333";
+            bossProj.forEach(bp => { ctx.beginPath(); ctx.arc(bp.x, bp.y, bp.r, 0, Math.PI * 2); ctx.fill(); });
+
+            // Texto Flutuante de Item Coletado
+            if (textoItemTimer > 0) {
+                ctx.save();
+                ctx.fillStyle = "#ffd700"; ctx.font = "bold 20px Arial"; ctx.textAlign = "center";
+                ctx.shadowColor = "#000"; ctx.shadowBlur = 4;
+                ctx.fillText(`ITEM COLETADO: ${textoItemNome}`, canvas.width / 2, 120);
+                ctx.restore();
+            }
+
+            // 9. Banner de Fase
+            if (textoAlertaTimer > 0) {
+                ctx.save();
+                ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+                ctx.fillRect(0, 180, canvas.width, 100);
+                ctx.fillStyle = "#ffffff"; ctx.font = "bold 28px Arial"; ctx.textAlign = "center";
+                ctx.fillText(fase === 10 ? "CONFRONTO FINAL: MEGA SATAN" : `FASE ${fase} / 10 — DIFICULDADE AUMENTADA!`, canvas.width / 2, 225);
+                ctx.fillStyle = "#bbb"; ctx.font = "italic 18px Arial";
+                ctx.fillText(fase === 10 ? "Sobreviva ao mestre do subsolo..." : "Limpe a sala para ganhar recompensas!", canvas.width / 2, 260);
+                ctx.restore();
+            }
+
+            document.getElementById('hud-hp').innerText = `Vida: ${'♥ '.repeat(Math.max(0, jogador.hp))}`;
+            document.getElementById('hud-score').innerText = `Pontos: ${pontos}`;
+            document.getElementById('hud-fase').innerText = `Fase: ${fase} / 10`;
+        }
+
+        function gameLoop() {
+            if (!jogoAtivo) return;
+            atualizar();
+            desenhar();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function finalizarJogo(vitoria) {
+            jogoAtivo = false;
+            if (vitoria) {
+                alert(`✨ PARABÉNS! VOCÊ DETONOU O MEGA SATAN E ZEROU O JOGO! ✨\nPontuação Final: ${pontos}`);
+            } else {
+                alert(`GAME OVER!\nVocê morreu na Fase ${fase}.\nPontos: ${pontos}`);
+            }
+            dados.ranking.push({ usuario: usuarioAtual, pontos: pontos, fase: fase });
+            salvarDados();
+            location.reload();
+        }
+    </script>
+</body>
+
+</html>
